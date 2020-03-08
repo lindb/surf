@@ -1,0 +1,5 @@
+{{.Comment}}
+func {{.DocInfo.Name}}(t TestingT, {{.Params}}) {
+	if assert.{{.DocInfo.Name}}(t, {{.ForwardedParams}}) { return }
+	t.FailNow()
+}

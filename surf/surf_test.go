@@ -14,10 +14,53 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pingcap/tidb/tablecodec"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+var (
+	tablePrefix     = []byte{'t'}
+	recordPrefixSep = []byte("_r")
+)
+
+const (
+	idLen     = 8
+	prefixLen = 1 + idLen /*tableID*/ + 2
+	// RecordRowKeyLen is public for calculating avgerage row size.
+	RecordRowKeyLen = prefixLen + idLen /*handle*/
+)
+
+const signMask uint64 = 0x8000000000000000
+
+// EncodeIntToCmpUint make int v to comparable uint type
+func EncodeIntToCmpUint(v int64) uint64 {
+	return uint64(v) ^ signMask
+}
+
+// EncodeInt appends the encoded value to slice b and returns the appended slice.
+// EncodeInt guarantees that the encoded value is in ascending order for comparison.
+func EncodeInt(b []byte, v int64) []byte {
+	var data [8]byte
+	u := EncodeIntToCmpUint(v)
+	endian.PutUint64(data[:], u)
+	return append(b, data[:]...)
+}
+
+// appendTableRecordPrefix appends table record prefix  "t[tableID]_r".
+func appendTableRecordPrefix(buf []byte, tableID int64) []byte {
+	buf = append(buf, tablePrefix...)
+	buf = EncodeInt(buf, tableID)
+	buf = append(buf, recordPrefixSep...)
+	return buf
+}
+
+// EncodeRowKeyWithHandle encodes the table id, row handle into a kv.Key
+func EncodeRowKeyWithHandle(tableID int64, handle int64) []byte {
+	buf := make([]byte, 0, RecordRowKeyLen)
+	buf = appendTableRecordPrefix(buf, tableID)
+	buf = EncodeInt(buf, handle)
+	return buf
+}
 
 type SuRFTestSuite struct {
 	suite.Suite
@@ -46,7 +89,7 @@ func (suite *SuRFTestSuite) SetupSuite() {
 	suite.handles = make([][]byte, 0, 3000000)
 	rnd := rand.New(rand.NewSource(0xdeadbeaf))
 	for i := 0; i < 3000000; i++ {
-		k := tablecodec.EncodeRowKeyWithHandle(rnd.Int63n(15)+1, rnd.Int63())
+		k := EncodeRowKeyWithHandle(rnd.Int63n(15)+1, rnd.Int63())
 		suite.handles = append(suite.handles, k)
 	}
 	sort.Slice(suite.handles, func(i, j int) bool {
@@ -116,9 +159,9 @@ func (suite *SuRFTestSuite) TestTableRowKeyWithVaryTid() {
 					b := make([][]byte, 0, n*2)
 					for i := 0; i < n; i += 3 {
 						tid := int64(i % x)
-						a = append(a, tablecodec.EncodeRowKeyWithHandle(tid, int64(handles[i])))
-						b = append(b, tablecodec.EncodeRowKeyWithHandle(tid, int64(handles[i+1])))
-						b = append(b, tablecodec.EncodeRowKeyWithHandle(tid, int64(handles[i+2])))
+						a = append(a, EncodeRowKeyWithHandle(tid, int64(handles[i])))
+						b = append(b, EncodeRowKeyWithHandle(tid, int64(handles[i+1])))
+						b = append(b, EncodeRowKeyWithHandle(tid, int64(handles[i+2])))
 					}
 					sort.Slice(a, func(i, j int) bool {
 						return bytes.Compare(a[i], a[j]) < 0
