@@ -1,4 +1,4 @@
-module github.com/bobotu/myk
+module github.com/lindb/surf
 
 go 1.13
 
